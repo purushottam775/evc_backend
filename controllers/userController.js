@@ -194,7 +194,7 @@ export const getProfile = async (req, res) => {
 // ---------------- Update Profile ----------------
 export const updateProfile = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user._id;
     const { name, phone_number, vehicle_number, vehicle_type } = req.body;
 
     const updates = {};
@@ -210,6 +210,36 @@ export const updateProfile = async (req, res) => {
     res.json({ message: "Profile updated successfully", user: updatedUser });
   } catch (err) {
     console.error("Update profile error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// ---------------- Get User Stats ----------------
+export const getUserStats = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Import Booking model
+    const Booking = (await import("../models/Booking.js")).default;
+    
+    // Get booking statistics for the user
+    const totalBookings = await Booking.countDocuments({ user_id: id });
+    const pendingBookings = await Booking.countDocuments({ user_id: id, booking_status: "pending" });
+    const approvedBookings = await Booking.countDocuments({ user_id: id, booking_status: "approved" });
+    const rejectedBookings = await Booking.countDocuments({ user_id: id, booking_status: "rejected" });
+    const cancelledBookings = await Booking.countDocuments({ user_id: id, booking_status: "cancelled" });
+    
+    const stats = {
+      total_bookings: totalBookings,
+      pending: pendingBookings,
+      approved: approvedBookings,
+      rejected: rejectedBookings,
+      cancelled: cancelledBookings
+    };
+    
+    res.json({ stats });
+  } catch (err) {
+    console.error("Get user stats error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };

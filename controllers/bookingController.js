@@ -7,7 +7,7 @@ import { sendEmail } from "../utils/sendEmail.js";
 // ---------------- User: Create booking ----------------
 export const createBooking = async (req, res) => {
   try {
-    const { user_id } = req.user;
+    const user_id = req.user._id;
     const { slot_id, station_id, booking_date, start_time, end_time } = req.body;
 
     if (!slot_id || !station_id || !booking_date || !start_time || !end_time) {
@@ -74,7 +74,7 @@ export const createBooking = async (req, res) => {
 // ---------------- User: Update pending booking ----------------
 export const updateBooking = async (req, res) => {
   try {
-    const { user_id } = req.user;
+    const user_id = req.user._id;
     const { id } = req.params;
     const { slot_id, station_id, booking_date, start_time, end_time } = req.body;
 
@@ -133,7 +133,7 @@ export const updateBooking = async (req, res) => {
 // ---------------- User: Cancel pending booking ----------------
 export const cancelBooking = async (req, res) => {
   try {
-    const { user_id } = req.user;
+    const user_id = req.user._id;
     const { id } = req.params;
 
     const booking = await Booking.findOne({ _id: id, user_id, booking_status: "pending" });
@@ -211,7 +211,7 @@ export const rejectBooking = async (req, res) => {
 // ---------------- User: List their bookings ----------------
 export const userBookings = async (req, res) => {
   try {
-    const { user_id } = req.user;
+    const user_id = req.user._id;
 
     const bookings = await Booking.find({ user_id })
       .populate("station_id", "station_name")
