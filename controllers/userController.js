@@ -11,7 +11,11 @@ export const registerUser = async (req, res) => {
   try {
     const { name, email, password, phone_number, vehicle_number, vehicle_type } = req.body;
 
+    // Debug logging
+    console.log('Registration attempt:', { name, email, phone_number, vehicle_number, vehicle_type });
+
     if (!name || !email || !password) {
+      console.log('Missing required fields:', { name: !!name, email: !!email, password: !!password });
       return res.status(400).json({ message: "Name, email, and password are required." });
     }
 
@@ -57,9 +61,28 @@ export const registerUser = async (req, res) => {
        <a href="${verifyLink}" target="_blank">${verifyLink}</a>`
     );
 
+    console.log('Registration successful for:', email);
     res.status(201).json({ message: "Registration successful. Check your email to verify your account." });
   } catch (err) {
     console.error("Register error:", err);
+    
+    // Handle MongoDB duplicate key errors
+    if (err.code === 11000) {
+      const field = Object.keys(err.keyPattern)[0];
+      if (field === 'email') {
+        return res.status(400).json({ message: "User already exists." });
+      } else if (field === 'vehicle_number') {
+        return res.status(400).json({ message: "Vehicle number already registered." });
+      }
+      return res.status(400).json({ message: "Duplicate entry detected." });
+    }
+    
+    // Handle validation errors
+    if (err.name === 'ValidationError') {
+      const messages = Object.values(err.errors).map(e => e.message);
+      return res.status(400).json({ message: messages.join(', ') });
+    }
+    
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
