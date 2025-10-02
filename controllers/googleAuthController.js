@@ -76,7 +76,7 @@ export const googleAuthCallback = (req, res, next) => {
         if (err || !user) {
             // Check if it's a blocked user error
             if (err && err.message && err.message.includes("blocked")) {
-                const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+                const frontendUrl = process.env.FRONTEND_URL || "https://ev-zh0a.onrender.com";
                 const errorUrl = `${frontendUrl}/auth/google/callback?error=account_blocked&error_description=${encodeURIComponent(err.message)}`;
                 return res.redirect(errorUrl);
             }
@@ -96,7 +96,7 @@ export const googleAuthCallback = (req, res, next) => {
             }
 
             // For frontend redirect flow, send as URL parameters
-            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+            const frontendUrl = process.env.FRONTEND_URL || "https://ev-zh0a.onrender.com";
             const userData = {
                 name: user.name,
                 email: user.email,
@@ -110,7 +110,7 @@ export const googleAuthCallback = (req, res, next) => {
             res.redirect(redirectUrl);
 
         } catch (error) {
-            const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+            const frontendUrl = process.env.FRONTEND_URL || "https://ev-zh0a.onrender.com";
             const errorUrl = `${frontendUrl}/auth/google/callback?error=server_error&error_description=${encodeURIComponent(error.message)}`;
             res.redirect(errorUrl);
         }

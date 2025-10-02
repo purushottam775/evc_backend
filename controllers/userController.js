@@ -50,16 +50,22 @@ export const registerUser = async (req, res) => {
 
     await newUser.save();
 
-    const backendUrl = process.env.SERVER_URL || "http://localhost:5000";
+    const backendUrl = process.env.SERVER_URL || "https://evc-backend-3.onrender.com";
     const verifyLink = `${backendUrl}/api/users/verify/${verificationToken}`;
 
-    await sendEmail(
-      email,
-      "Verify your account",
-      `<h2>Welcome, ${name}!</h2>
-       <p>Please click the link below to verify your account:</p>
-       <a href="${verifyLink}" target="_blank">${verifyLink}</a>`
-    );
+    try {
+      await sendEmail(
+        email,
+        "Verify your account",
+        `<h2>Welcome, ${name}!</h2>
+         <p>Please click the link below to verify your account:</p>
+         <a href="${verifyLink}" target="_blank">${verifyLink}</a>`
+      );
+      console.log('Verification email sent to:', email);
+    } catch (emailError) {
+      console.error('Email sending failed:', emailError.message);
+      // Don't fail registration if email fails - user can still verify later
+    }
 
     console.log('Registration successful for:', email);
     res.status(201).json({ message: "Registration successful. Check your email to verify your account." });
@@ -100,7 +106,7 @@ export const verifyUser = async (req, res) => {
     user.verification_token = null;
     await user.save();
 
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = process.env.CLIENT_URL || "https://ev-zh0a.onrender.com";
     res.send(`
       <div style="text-align:center; margin-top:50px;">
         <h1 style="color:green;">Your account has been verified!</h1>
