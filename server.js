@@ -23,11 +23,58 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: true, // Allow all origins for now (you can restrict this later)
+  origin: [
+    'https://ev-zh0a.onrender.com',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000'
+  ],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'Accept',
+    'Origin',
+    'X-Requested-With',
+    'Access-Control-Allow-Origin',
+    'Access-Control-Allow-Headers',
+    'Access-Control-Allow-Methods'
+  ],
+  optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 }));
+
+// CORS middleware already handles preflight requests
+
+// Debug middleware for CORS and requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log('Origin:', req.headers.origin);
+  console.log('User-Agent:', req.headers['user-agent']);
+  
+  // Add CORS headers manually as backup
+  if (req.headers.origin) {
+    const allowedOrigins = [
+      'https://ev-zh0a.onrender.com',
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://127.0.0.1:3000'
+    ];
+    
+    if (allowedOrigins.includes(req.headers.origin)) {
+      res.header('Access-Control-Allow-Origin', req.headers.origin);
+    }
+  }
+  
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept,Origin,X-Requested-With');
+  
+  next();
+});
+
 app.use(express.json());
 
 // Initialize passport
@@ -46,13 +93,22 @@ app.get("/", (req, res) => {
 });
 
 // Routes
+app.use("/users", userRoutes);
+app.use("/admins", adminRoutes);
+app.use("/admins/users", adminUserRoutes);
+app.use("/stations", stationRoutes);
+app.use("/slots", slotRoutes);
+
+// Booking routes
+app.use("/bookings/user", bookingUserRoutes);   
+app.use("/bookings/admin", bookingAdminRoutes);
+
+// Also mount with /api prefix for backwards compatibility
 app.use("/api/users", userRoutes);
 app.use("/api/admins", adminRoutes);
 app.use("/api/admins/users", adminUserRoutes);
 app.use("/api/stations", stationRoutes);
 app.use("/api/slots", slotRoutes);
-
-// Booking routes
 app.use("/api/bookings/user", bookingUserRoutes);   
 app.use("/api/bookings/admin", bookingAdminRoutes); 
 
