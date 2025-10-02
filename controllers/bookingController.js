@@ -1,127 +1,240 @@
-import db from "../config/db.js";
+import Booking from "../models/Booking.js";
+import ChargingStation from "../models/ChargingStation.js";
+import Slot from "../models/Slot.js";
+import User from "../models/User.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 // ---------------- User: Create booking ----------------
-export const createBooking = (req, res) => {
-  const { user_id } = req.user;
-  const { slot_id, station_id, booking_date, start_time, end_time } = req.body;
+export const createBooking = async (req, res) => {
+  try {
+    const { user_id } = req.user;
+    const { slot_id, station_id, booking_date, start_time, end_time } = req.body;
 
-  if (!slot_id || !station_id || !booking_date || !start_time || !end_time) {
-    return res.status(400).json({ message: "All fields are required" });
-  }
-
-  const query = `
-    INSERT INTO bookings
-    (user_id, slot_id, station_id, booking_date, start_time, end_time, booking_status, payment_status) 
-    VALUES (?, ?, ?, ?, ?, ?, 'pending', 'pending')
-  `;
-
-  db.query(
-    query,
-    [user_id, slot_id, station_id, booking_date, start_time, end_time],
-    (err, result) => {
-      if (err) return res.status(500).json({ message: err.message });
-      res.status(201).json({ message: "Booking request sent", booking_id: result.insertId });
+    if (!slot_id || !station_id || !booking_date || !start_time || !end_time) {
+      return res.status(400).json({ message: "All fields are required" });
     }
-  );
+
+    // Convert booking_date to Date for comparison
+    const bookingDay = new Date(booking_date);
+
+    // Step 1: Check if user has overlapping booking at the station
+    const overlappingUserBooking = await Booking.findOne({
+      user_id,
+      station_id,
+      booking_date: bookingDay,
+      booking_status: { $in: ["pending", "approved"] },
+      $or: [
+        { start_time: { $lt: end_time }, end_time: { $gt: start_time } },
+        { start_time: { $lt: start_time }, end_time: { $gt: end_time } },
+      ],
+    });
+
+    if (overlappingUserBooking) {
+      return res.status(400).json({ message: "You already have a booking at this station during this time" });
+    }
+
+    // Step 2: Check if slot is available
+    const slotBooked = await Booking.findOne({
+      slot_id,
+      station_id,
+      booking_date: bookingDay,
+      booking_status: { $in: ["pending", "approved"] },
+      $or: [
+        { start_time: { $lt: end_time }, end_time: { $gt: start_time } },
+        { start_time: { $lt: start_time }, end_time: { $gt: end_time } },
+      ],
+    });
+
+    if (slotBooked) {
+      return res.status(400).json({ message: "This slot is already booked for the given time" });
+    }
+
+    // Step 3: Check station availability
+    const station = await ChargingStation.findById(station_id);
+    if (!station) return res.status(404).json({ message: "Station not found" });
+    if (station.available_slots <= 0) return res.status(400).json({ message: "No available slots at this station" });
+
+    // Step 4: Create booking
+    const booking = await Booking.create({
+      user_id,
+      slot_id,
+      station_id,
+      booking_date: bookingDay,
+      start_time,
+      end_time,
+    });
+
+    res.status(201).json({ message: "Booking request sent", booking_id: booking._id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };
 
 // ---------------- User: Update pending booking ----------------
-export const updateBooking = (req, res) => {
-  const { user_id } = req.user;
-  const { id } = req.params;
-  const { slot_id, station_id, booking_date, start_time, end_time } = req.body;
+export const updateBooking = async (req, res) => {
+  try {
+    const { user_id } = req.user;
+    const { id } = req.params;
+    const { slot_id, station_id, booking_date, start_time, end_time } = req.body;
 
-  const queryCheck = `
-    SELECT * FROM bookings 
-    WHERE booking_id=? AND user_id=? AND booking_status='pending'
-  `;
-  db.query(queryCheck, [id, user_id], (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    if (results.length === 0) return res.status(400).json({ message: "Booking cannot be updated" });
+    const booking = await Booking.findOne({ _id: id, user_id, booking_status: "pending" });
+    if (!booking) return res.status(400).json({ message: "Booking cannot be updated" });
 
-    const queryUpdate = `
-      UPDATE bookings 
-      SET slot_id=?, station_id=?, booking_date=?, start_time=?, end_time=? 
-      WHERE booking_id=?
-    `;
-    db.query(queryUpdate, [slot_id, station_id, booking_date, start_time, end_time, id], (err2) => {
-      if (err2) return res.status(500).json({ message: err2.message });
-      res.json({ message: "Booking updated successfully" });
+    const bookingDay = new Date(booking_date);
+
+    // Check overlapping bookings for user
+    const overlappingUserBooking = await Booking.findOne({
+      _id: { $ne: id },
+      user_id,
+      station_id,
+      booking_date: bookingDay,
+      booking_status: { $in: ["pending", "approved"] },
+      $or: [
+        { start_time: { $lt: end_time }, end_time: { $gt: start_time } },
+        { start_time: { $lt: start_time }, end_time: { $gt: end_time } },
+      ],
     });
-  });
+
+    if (overlappingUserBooking) {
+      return res.status(400).json({ message: "You already have a booking at this station during this time" });
+    }
+
+    // Check slot availability
+    const slotBooked = await Booking.findOne({
+      _id: { $ne: id },
+      slot_id,
+      station_id,
+      booking_date: bookingDay,
+      booking_status: { $in: ["pending", "approved"] },
+      $or: [
+        { start_time: { $lt: end_time }, end_time: { $gt: start_time } },
+        { start_time: { $lt: start_time }, end_time: { $gt: end_time } },
+      ],
+    });
+
+    if (slotBooked) return res.status(400).json({ message: "This slot is already booked for the given time" });
+
+    // Update booking
+    booking.slot_id = slot_id;
+    booking.station_id = station_id;
+    booking.booking_date = bookingDay;
+    booking.start_time = start_time;
+    booking.end_time = end_time;
+
+    await booking.save();
+    res.json({ message: "Booking updated successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };
 
 // ---------------- User: Cancel pending booking ----------------
-export const cancelBooking = (req, res) => {
-  const { user_id } = req.user;
-  const { id } = req.params;
+export const cancelBooking = async (req, res) => {
+  try {
+    const { user_id } = req.user;
+    const { id } = req.params;
 
-  const queryCheck = `
-    SELECT * FROM bookings 
-    WHERE booking_id=? AND user_id=? AND booking_status='pending'
-  `;
-  db.query(queryCheck, [id, user_id], (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    if (results.length === 0) return res.status(400).json({ message: "Booking cannot be cancelled" });
+    const booking = await Booking.findOne({ _id: id, user_id, booking_status: "pending" });
+    if (!booking) return res.status(400).json({ message: "Booking cannot be cancelled" });
 
-    const queryCancel = "UPDATE bookings SET booking_status='cancelled' WHERE booking_id=?";
-    db.query(queryCancel, [id], (err2) => {
-      if (err2) return res.status(500).json({ message: err2.message });
-      res.json({ message: "Booking cancelled successfully" });
-    });
-  });
-};
+    booking.booking_status = "cancelled";
+    await booking.save();
 
-// ---------------- Admin: List pending bookings ----------------
-export const listPendingBookings = (req, res) => {
-  const query = `
-    SELECT b.*, u.name as user_name, c.station_name, s.slot_number
-    FROM bookings b
-    JOIN user u ON b.user_id=u.user_id
-    JOIN chargingstation c ON b.station_id=c.station_id
-    JOIN slot s ON b.slot_id=s.slot_id
-    WHERE b.booking_status='pending'
-  `;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    res.json({ bookings: results });
-  });
+    // Increment station available slots
+    await ChargingStation.findByIdAndUpdate(booking.station_id, { $inc: { available_slots: 1 } });
+
+    res.json({ message: "Booking cancelled successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };
 
 // ---------------- Admin: Approve booking ----------------
-export const approveBooking = (req, res) => {
-  const { id } = req.params;
-  const query = "UPDATE bookings SET booking_status='approved' WHERE booking_id=?";
-  db.query(query, [id], (err, result) => {
-    if (err) return res.status(500).json({ message: err.message });
-    if (result.affectedRows === 0) return res.status(404).json({ message: "Booking not found" });
+export const approveBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const booking = await Booking.findById(id).populate("user_id slot_id station_id");
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    booking.booking_status = "approved";
+    await booking.save();
+
+    // Decrease station available slots
+    await ChargingStation.findByIdAndUpdate(booking.station_id._id, { $inc: { available_slots: -1 } });
+
+    // Send email
+    try {
+      await sendEmail(
+        booking.user_id.email,
+        "Booking Confirmed",
+        `<h2>Hello ${booking.user_id.name},</h2>
+         <p>Your booking has been <b>approved</b> 🎉</p>
+         <ul>
+           <li>Station: ${booking.station_id.station_name}</li>
+           <li>Slot: ${booking.slot_id.slot_number}</li>
+           <li>Date: ${booking.booking_date.toDateString()}</li>
+           <li>Time: ${booking.start_time} - ${booking.end_time}</li>
+         </ul>`
+      );
+    } catch (emailErr) {
+      console.error("Email sending failed:", emailErr);
+    }
+
     res.json({ message: "Booking approved" });
-  });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };
 
 // ---------------- Admin: Reject booking ----------------
-export const rejectBooking = (req, res) => {
-  const { id } = req.params;
-  const query = "UPDATE bookings SET booking_status='rejected' WHERE booking_id=?";
-  db.query(query, [id], (err, result) => {
-    if (err) return res.status(500).json({ message: err.message });
-    if (result.affectedRows === 0) return res.status(404).json({ message: "Booking not found" });
+export const rejectBooking = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const booking = await Booking.findById(id);
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    booking.booking_status = "rejected";
+    await booking.save();
+
     res.json({ message: "Booking rejected" });
-  });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };
 
-// ---------------- User: View bookings ----------------
-export const userBookings = (req, res) => {
-  const { user_id } = req.user;
-  const query = `
-    SELECT b.*, c.station_name, s.slot_number
-    FROM bookings b
-    JOIN chargingstation c ON b.station_id=c.station_id
-    JOIN slot s ON b.slot_id=s.slot_id
-    WHERE b.user_id=?
-  `;
-  db.query(query, [user_id], (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    res.json({ bookings: results });
-  });
+// ---------------- User: List their bookings ----------------
+export const userBookings = async (req, res) => {
+  try {
+    const { user_id } = req.user;
+
+    const bookings = await Booking.find({ user_id })
+      .populate("station_id", "station_name")
+      .populate("slot_id", "slot_number");
+
+    res.json({ bookings });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// ---------------- Admin: List pending bookings ----------------
+export const listPendingBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find({ booking_status: "pending" })
+      .populate("user_id", "name email")
+      .populate("station_id", "station_name")
+      .populate("slot_id", "slot_number");
+
+    res.json({ bookings });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };

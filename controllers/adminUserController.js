@@ -1,15 +1,10 @@
-// adminUserController.js
-import db from "../config/db.js"; // MySQL connection
-import bcrypt from "bcryptjs";
+import User from "../models/User.js";
 
 // ------------------- Get all users -------------------
 export const getAllUsers = async (req, res) => {
   try {
-    const [users] = await db.promise().query(
-      `SELECT 
-         user_id, name, email, phone_number, vehicle_number, vehicle_type, 
-         role, status, is_blocked, created_at, updated_at 
-       FROM user`
+    const users = await User.find().select(
+      "name email phone_number vehicle_number vehicle_type role is_blocked createdAt updatedAt"
     );
     res.status(200).json({ success: true, users });
   } catch (err) {
@@ -22,10 +17,8 @@ export const getAllUsers = async (req, res) => {
 export const blockUser = async (req, res) => {
   const { user_id } = req.params;
   try {
-    await db.promise().query(
-      "UPDATE user SET is_blocked = TRUE WHERE user_id = ?",
-      [user_id]
-    );
+    const user = await User.findByIdAndUpdate(user_id, { is_blocked: true }, { new: true });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
     res.status(200).json({ success: true, message: "User blocked successfully" });
   } catch (err) {
     console.error(err);
@@ -37,10 +30,8 @@ export const blockUser = async (req, res) => {
 export const unblockUser = async (req, res) => {
   const { user_id } = req.params;
   try {
-    await db.promise().query(
-      "UPDATE user SET is_blocked = FALSE WHERE user_id = ?",
-      [user_id]
-    );
+    const user = await User.findByIdAndUpdate(user_id, { is_blocked: false }, { new: true });
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
     res.status(200).json({ success: true, message: "User unblocked successfully" });
   } catch (err) {
     console.error(err);
@@ -52,12 +43,19 @@ export const unblockUser = async (req, res) => {
 export const updateUser = async (req, res) => {
   const { user_id } = req.params;
   const { role, status } = req.body; // role: 'user'/'admin', status: 'active'/'inactive'
+
   try {
-    await db.promise().query(
-      "UPDATE user SET role = ?, status = ? WHERE user_id = ?",
-      [role, status, user_id]
+    const updates = {};
+    if (role) updates.role = role;
+    if (status) updates.status = status;
+
+    const user = await User.findByIdAndUpdate(user_id, updates, { new: true }).select(
+      "name email phone_number vehicle_number vehicle_type role status is_blocked"
     );
-    res.status(200).json({ success: true, message: "User updated successfully" });
+
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
+    res.status(200).json({ success: true, message: "User updated successfully", user });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Server error" });
@@ -68,10 +66,9 @@ export const updateUser = async (req, res) => {
 export const deleteUser = async (req, res) => {
   const { user_id } = req.params;
   try {
-    await db.promise().query(
-      "DELETE FROM user WHERE user_id = ?",
-      [user_id]
-    );
+    const user = await User.findByIdAndDelete(user_id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+
     res.status(200).json({ success: true, message: "User deleted successfully" });
   } catch (err) {
     console.error(err);

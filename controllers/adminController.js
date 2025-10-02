@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import db from "../config/db.js";
+import Admin from "../models/Admin.js";
 import { generateToken } from "../utils/token.js";
 
 // Allowed roles
@@ -12,7 +12,7 @@ const isValidEmail = (email) => {
 };
 
 // ------------------- Register Admin -------------------
-export const registerAdmin = (req, res) => {
+export const registerAdmin = async (req, res) => {
   const { name, email, password, role } = req.body || {};
 
   if (!req.body || Object.keys(req.body).length === 0) {
@@ -35,40 +35,37 @@ export const registerAdmin = (req, res) => {
     return res.status(400).json({ message: "Password must be at least 6 characters long" });
   }
 
-  db.query("SELECT * FROM Admin WHERE email = ?", [email], async (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    if (results.length > 0) return res.status(400).json({ message: "Admin already exists" });
-
-    try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      db.query(
-        "INSERT INTO Admin (name, email, password, role) VALUES (?, ?, ?, ?)",
-        [name, email, hashedPassword, role],
-        (err, result) => {
-          if (err) return res.status(500).json({ message: err.message });
-
-          const newAdmin = {
-            id: result.insertId,
-            name,
-            email,
-            role
-          };
-
-          res.status(201).json({
-            message: "Admin registered successfully",
-            user: newAdmin
-          });
-        }
-      );
-    } catch (error) {
-      return res.status(500).json({ message: "Server error", error: error.message });
+  try {
+    const existingAdmin = await Admin.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({ message: "Admin already exists" });
     }
-  });
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newAdmin = await Admin.create({
+      name,
+      email,
+      password: hashedPassword,
+      role,
+    });
+
+    res.status(201).json({
+      message: "Admin registered successfully",
+      user: {
+        id: newAdmin._id,
+        name: newAdmin.name,
+        email: newAdmin.email,
+        role: newAdmin.role,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
 };
 
 // ------------------- Login Admin -------------------
-export const loginAdmin = (req, res) => {
+export const loginAdmin = async (req, res) => {
   const { email, password } = req.body || {};
 
   if (!req.body || Object.keys(req.body).length === 0) {
@@ -79,33 +76,29 @@ export const loginAdmin = (req, res) => {
     return res.status(400).json({ message: "Email and password are required" });
   }
 
-  db.query("SELECT * FROM Admin WHERE email = ?", [email], async (err, results) => {
-    if (err) return res.status(500).json({ message: err.message });
-    if (results.length === 0) return res.status(401).json({ message: "Invalid credentials" });
+  try {
+    const admin = await Admin.findOne({ email });
+    if (!admin) return res.status(401).json({ message: "Invalid credentials" });
 
-    const admin = results[0];
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
-    try {
-      const isMatch = await bcrypt.compare(password, admin.password);
-      if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+    const userData = {
+      id: admin._id,
+      name: admin.name,
+      email: admin.email,
+      role: admin.role,
+      isAdmin: true,
+    };
 
-      const userData = {
-        id: admin.admin_id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        isAdmin: true,
-      };
-
-      res.json({
-        message: "Login successful",
-        token: generateToken({ id: admin.admin_id, role: admin.role }),
-        user: userData,
-      });
-    } catch (error) {
-      return res.status(500).json({ message: "Server error", error: error.message });
-    }
-  });
+    res.json({
+      message: "Login successful",
+      token: generateToken({ id: admin._id, role: admin.role }),
+      user: userData,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
 };
 
 // ------------------- Dashboard -------------------
@@ -115,7 +108,7 @@ export const getDashboard = (req, res) => {
 
     res.json({
       message: "Admin dashboard data fetched successfully",
-      user: req.admin, // keep consistent with frontend
+      user: req.admin,
     });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });

@@ -1,7 +1,7 @@
-import db from "../config/db.js";
+import Admin from "../models/Admin.js";
 import { verifyToken } from "../utils/token.js";
 
-export const adminProtect = (req, res, next) => {
+export const adminProtect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -16,18 +16,15 @@ export const adminProtect = (req, res, next) => {
       return res.status(401).json({ message: "Not authorized or token expired" });
     }
 
-    // Ensure your DB column matches the token payload
-    db.query(
-      "SELECT admin_id AS id, name, email, role FROM Admin WHERE admin_id = ?",
-      [decoded.id],
-      (err, results) => {
-        if (err) return res.status(500).json({ message: err.message });
-        if (results.length === 0) return res.status(404).json({ message: "Admin not found" });
+    // Fetch admin from MongoDB
+    const admin = await Admin.findById(decoded.id).select("name email role");
 
-        req.admin = results[0];
-        next();
-      }
-    );
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    req.admin = admin;
+    next();
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error", error: err.message });
